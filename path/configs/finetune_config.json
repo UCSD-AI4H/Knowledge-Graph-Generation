@@ -1,0 +1,5 @@
+{
+    "saved_data_pth": "None",
+    "raw_data_pth": "data/finetune_raw_data.pkl",
+    "processed_data_pth": "None"
+}

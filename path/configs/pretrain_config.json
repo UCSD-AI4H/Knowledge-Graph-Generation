@@ -1,0 +1,7 @@
+{
+    "data_name": "path",
+    "corruption": "infilling",
+    "ratio": 0.3,
+    "num_of_span": 4,
+    "lamda": 3
+}
