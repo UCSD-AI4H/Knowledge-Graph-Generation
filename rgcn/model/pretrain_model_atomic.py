@@ -208,13 +208,65 @@ class R_GCN_GPT2(nn.Module):
           entity_embeds = []
           for entity_id in entity_id_list:
             entity = id2entity[entity_id]
-            input_ids = torch.LongTensor(tokenizer_gpt2.encode(entity)).unsqueeze(0).to(device)
-            entity_embed = self.gpt2_model.transformer.wte(input_ids).squeeze(0)
+            input_ids = torch.LongTensor(tokenizer_bert.encode(entity)).unsqueeze(0).to(device)
+            entity_embed = self.node_embedding(input_ids=input_ids)[0].squeeze(0)
             entity_embed = torch.sum(entity_embed,dim=0) / entity_embed.shape[0]
             entity_embeds.append(entity_embed.unsqueeze(0))
             feature = torch.cat(entity_embeds)
           features.append(feature)
         return features
+
+
+    def generate_ckg(self, batch):
+        with torch.no_grad():
+            prev_pred = batch['sr_ids']
+            mask = batch['sr_mask']
+            sentence = []
+            past = None
+            length = 1
+            # decoding loop
+            for i in range(20):       
+                # print('mask.shape:',mask.shape)
+                # print('input_embed.shape:',input_embed.shape)
+                logits, past = self.gpt2_model(input_ids=prev_pred,attention_mask=mask,past=past)
+                mask = F.pad(mask, (0, 1), "constant", 1.0) # add 1 to the last of the sentence mask
+                # print('mask:',mask.shape)
+                # logits = model.gpt2_model(attention_mask=mask,inputs_embeds=input_embed)
+                # logits = logits[0]
+                
+                # logits, past = decoder(input_ids=prev_pred, past=past, attention_mask=mask)
+                logits = logits[:,-1,:]
+                # print('logits:',logits.shape)
+                logits = logits.squeeze(1) / temperature
+                logits = top_k_logits(logits, k=top_k)
+                probs = F.softmax(logits, dim=-1)
+                prev_pred = torch.multinomial(probs, num_samples=1)
+                sentence.append(prev_pred)
+                # if prev_pred[0][0] == 50256:
+                #     break
+                length += 1
+                # print('prev_pred:',prev_pred)
+                # input_embed = self.gpt2_model.transformer.wte(prev_pred).squeeze(0)
+
+            sentence = torch.cat(sentence, dim=-1)
+            # print('sentence:',sentence.shape)
+
+        return sentence
+
+    def forward_ckg(self,batch):
+        sen_ids = batch['sen_ids']
+        # sr_ids = batch['sr_ids']
+        attention_mask = batch['sen_mask']
+        # mask = torch.LongTensor(batch['mask']).to(device)
+        # sr_embedding, sr_mask = self.get_sr_embedding(heads,rels,pad_length)
+        # tail_embedding = self.get_tail_embedding(tails)
+        # input_embed = torch.cat((sr_embedding,tail_embedding),dim=1)
+        # mask = torch.cat((sr_mask,mask),dim=1)
+        # print(mask[0])
+        
+        logits = self.gpt2_model(input_ids=sen_ids,attention_mask=attention_mask)
+        
+        return logits
 
 
     def forward(self, batch):

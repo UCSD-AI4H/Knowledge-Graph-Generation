@@ -39,12 +39,14 @@ def get_optimizer(model, epochs, train_data_length, batch_size, num_gradients_ac
     return optimizer, criterion
 
 
-def train(model, train_data, test_data, epochs, optimizer, criterion, num_gradients_accumulation, model_file):
+def train(model, train_data, test_data, epochs, optimizer, criterion, num_gradients_accumulation, log_file, model_file):
     start = time.time()
     update_count = 0
+    cur_ppl = 10000
+    infos = []
+    pad_length = 50
     # print('test_data:',len(test_data))
     iter = len(train_data) // batch_size
-    current_ppl = 10000
     print('start training....')
     for epoch in range(epochs):
         #------------------------training------------------------
@@ -60,31 +62,27 @@ def train(model, train_data, test_data, epochs, optimizer, criterion, num_gradie
             
             # optimizer.zero_grad()
 
-            batch = {'g':[],'names':[],'edge_types':[],'edge_norms':[],'path':[],'path_mask':[]}
-            for piece in train_data[st:ed]:
-                batch['g'].append(piece[0].to(device))
-                batch['names'].append(piece[1])
-                batch['edge_types'].append(piece[2])
-                batch['edge_norms'].append(piece[3])
-                batch['path'].append(piece[4])
-                batch['path_mask'].append(piece[5])
-
-
-            batch['path'] = torch.LongTensor(batch['path']).to(device)
-            batch['path_mask'] = torch.LongTensor(batch['path_mask']).to(device)
+            batch_data = np.array(train_data[st:ed])
+            batch = {}
+            batch['sen_ids'] = torch.LongTensor(batch_data[:,0].tolist()).to(device)
+            batch['sr_ids'] = torch.LongTensor(batch_data[:,1].tolist()).to(device)
+            batch['sen_mask'] = torch.LongTensor(batch_data[:,2].tolist()).to(device)
+            batch['loss_mask'] = torch.LongTensor(batch_data[:,3].tolist()).to(device)
+            batch['sr_mask'] = torch.LongTensor(batch_data[:,4].tolist()).to(device)
             
-            logits = model(batch)
+            logits = model.forward_ckg(batch)
             logits = logits[0]
-            # print('logits.shape:',logits[0].shape)
-            out = logits[:, 1:-1].contiguous() # mask graph logits
-            target = batch['path'][:, 1:].contiguous()
-            target_mask = batch['path_mask'][:, 1:].contiguous()
-
+            # print('logits.shape:',logits.shape)
+            out = logits[:, :-1].contiguous() # mask graph logits
+            target = batch['sen_ids'][:,1:].contiguous().to(device)
+            # print('target:',target)
+            target_mask = batch['loss_mask'][:,1:].contiguous().to(device)
+            # print('out.shape:',out.shape) 
+            # print('target.shape:',target_mask.shape)
             out = out.reshape(-1, out.shape[-1])
             target = target.reshape(-1)
             target_mask = target_mask.reshape(-1)
-            # print('target:',target.shape)
-            # print('out:',out.shape)
+            
             loss = criterion(out, target)
             loss = loss.masked_fill_(mask=(0==target_mask),value=0)
             
@@ -108,7 +106,9 @@ def train(model, train_data, test_data, epochs, optimizer, criterion, num_gradie
         print('-'*20 + f'epoch {epoch}' + '-'*20)
         print(f'time: {(end - start)}')
         print(f'loss: {losses / times}')
-        
+        loss_ = losses / times
+        # path = 'GCN_GPT2_100k.pkl'
+        # torch.save(model.state_dict(), path)
         start = end
         
         #------------------------validate------------------------
@@ -126,47 +126,50 @@ def train(model, train_data, test_data, epochs, optimizer, criterion, num_gradie
                 st = ed
                 ed += batch_size
 
-                batch = {'g':[],'names':[],'edge_types':[],'edge_norms':[],'path':[],'path_mask':[]}
-                for piece in test_data[st:ed]:
-                    batch['g'].append(piece[0].to(device))
-                    batch['names'].append(piece[1])
-                    batch['edge_types'].append(piece[2])
-                    batch['edge_norms'].append(piece[3])
-                    batch['path'].append(piece[4])
-                    batch['path_mask'].append(piece[5])
-
-
-                batch['path'] = torch.LongTensor(batch['path']).to(device)
-                batch['path_mask'] = torch.LongTensor(batch['path_mask']).to(device)
+                batch_data = np.array(test_data[st:ed])
+                batch = {}
+                batch['sen_ids'] = torch.LongTensor(batch_data[:,0].tolist()).to(device)
+                batch['sr_ids'] = torch.LongTensor(batch_data[:,1].tolist()).to(device)
+                batch['sen_mask'] = torch.LongTensor(batch_data[:,2].tolist()).to(device)
+                batch['loss_mask'] = torch.LongTensor(batch_data[:,3].tolist()).to(device)
+                batch['sr_mask'] = torch.LongTensor(batch_data[:,4].tolist()).to(device)
                 
-                logits = model(batch)
+                logits = model.forward_ckg(batch)
                 logits = logits[0]
-
-                out = logits[:, 1:-1].contiguous()
-                target = batch['path'][:, 1:].contiguous()
-                target_mask = batch['path_mask'][:, 1:].contiguous()
-
+                # print('logits.shape:',logits.shape)
+                out = logits[:, :-1].contiguous() # mask graph logits
+                target = batch['sen_ids'][:,1:].contiguous().to(device)
+                # print('target:',target)
+                target_mask = batch['loss_mask'][:,1:].contiguous().to(device)
+                # print('out.shape:',out.shape)
+                # print('target.shape:',target_mask.shape)
                 out = out.reshape(-1, out.shape[-1])
                 target = target.reshape(-1)
                 target_mask = target_mask.reshape(-1)
-                # print('target:',target.shape)
-                # print('out:',out.shape)
+                
                 loss = criterion(out, target)
                 loss = loss.masked_fill_(mask=(0==target_mask),value=0)
+                
                 loss = torch.sum(loss) / torch.sum(target_mask)
                 torch.cuda.empty_cache()
                 perplexity += np.exp(loss.item())
                 batch_count += 1
 
         ppl = perplexity / batch_count
-        if ppl < current_ppl:
-            current_ppl = ppl
-            path = model_file
-            torch.save(model.state_dict(), path) 
-            print("Save model with ppl",ppl)
+        # evaluate the result
+        # log_info = evaluate_generation(test_data,triple_list,test_triples,model,'output.txt')
+        log_info['epoch'] = epoch + 1
+        log_info['loss'] = loss_
+        log_info['ppl'] = ppl
+        infos.append(log_info)
 
+        if ppl < cur_ppl:
+            cur_ppl = ppl
+            print('Store the model with ppl:',ppl)
+            torch.save(model.state_dict(),'model_file')
+        pickle.dump(infos,open('log_file','wb'))
 
-        print(f'validate perplexity: {ppl}')
+        print(f'validate perplexity: {perplexity / batch_count}')
 
 
 def main():
@@ -175,6 +178,7 @@ def main():
     batch_size = int(args.batch_size)
     num_gradients_accumulation = int(args.num_gradients_accumulation)
     model_file = args.model_file
+    log_file = args.log_file
 
     device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
 
@@ -194,7 +198,7 @@ def main():
     optimizer, criterion = get_optimizer(model, epochs, len(train_data), batch_size,
                                          num_gradients_accumulation=num_gradients_accumulation, lr=lr)
 
-    train(model, train_data, test_data, epochs, optimizer, criterion, num_gradients_accumulation, model_file)
+    train(model, train_data, test_data, epochs, optimizer, criterion, num_gradients_accumulation, log_file, model_file)
 
 
 

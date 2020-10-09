@@ -1,3 +1,5 @@
+config = GPT2Config(vocab_size=50266)
+
 def handler_edges(edges_embed):
     embed = []
     for edge_embed in edges_embed:
@@ -31,7 +33,6 @@ def top_k_logits(logits, k):
 
 top_k = 1
 temperature = 0.7
-
 # try with no regularization
 class RGCNLayer(nn.Module):
     def __init__(self, num_rels, in_feat=256, out_feat=256, num_bases=-1, bias=None,
@@ -50,6 +51,20 @@ class RGCNLayer(nn.Module):
         self.is_output_layer = is_output_layer
         # self.start_trans = nn.Linear(768,256)
         # self.end_trans = nn.Linear(256,768)
+
+        # sanity check
+        # if self.num_bases <= 0 or self.num_bases > self.num_rels:
+        #     self.num_bases = self.num_rels
+
+        # weight bases in equation (3)
+        # self.weight = nn.Parameter(torch.Tensor(self.num_rels, self.in_feat, self.out_feat))
+
+        # init trainable parameters
+        # nn.init.xavier_uniform_(self.weight, gain=nn.init.calculate_gain('relu'))
+        # if self.num_bases < self.num_rels:
+        #     nn.init.xavier_uniform_(self.w_comp, gain=nn.init.calculate_gain('relu'))
+        # if self.bias:
+        #     nn.init.xavier_uniform_(self.bias, gain=nn.init.calculate_gain('relu'))
 
     def forward_comet(self, heads, tails):
         # implemented to fine-tune in comet format s + r to decode o
@@ -193,7 +208,7 @@ class R_GCN_GPT2(nn.Module):
         super(R_GCN_GPT2, self).__init__()
         self.rgcn_model = RGCNModel(num_rels)
         # self.path_embedding = nn.Embedding(50257, 768)
-        self.gpt2_model = GPT2LMHeadModel.from_pretrained('gpt2')
+        self.gpt2_model = GPT2LMHeadModel(config)
         # self.weight_trans = nn.Linear(256,768)
         # self.node_embedding = BertModel.from_pretrained('bert-base-uncased')
         # self.path_embedding = GPT2Model.from_pretrained('gpt2')
@@ -294,6 +309,13 @@ class R_GCN_GPT2(nn.Module):
         attention_mask = batch['sen_mask']
         # mask = torch.LongTensor(batch['mask']).to(device)
 
+        # sr_embedding, sr_mask = self.get_sr_embedding(heads,rels,pad_length)
+        # tail_embedding = self.get_tail_embedding(tails)
+        
+
+        # input_embed = torch.cat((sr_embedding,tail_embedding),dim=1)
+        # mask = torch.cat((sr_mask,mask),dim=1)
+        # print(mask[0])
         
         logits = self.gpt2_model(input_ids=sen_ids,attention_mask=attention_mask)
         

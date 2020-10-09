@@ -57,9 +57,9 @@ def train(model, train_data, test_data, epochs, optimizer, criterion, num_gradie
         for iteration in tqdm.tqdm(range(iter)):
             st = ed
             ed += batch_size
-            
-            # optimizer.zero_grad()
 
+
+            # naive dataloader since there are dgl graph in dataset
             batch = {'g':[],'names':[],'edge_types':[],'edge_norms':[],'path':[],'path_mask':[]}
             for piece in train_data[st:ed]:
                 batch['g'].append(piece[0].to(device))
@@ -201,7 +201,7 @@ def main():
 
     model.gpt2_model.load_state_dict(new_state_dict)
 
-    if args.restore == True:
+    if args.load_model == True:
         model.load_state_dict(torch.load(model_file))
 
     optimizer, criterion = get_optimizer(model, epochs, len(train_data), batch_size,
