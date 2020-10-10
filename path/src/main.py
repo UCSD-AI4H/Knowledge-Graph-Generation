@@ -4,6 +4,7 @@ from model import make_model
 from data import make_pretrain_dataset, make_finetune_dataset
 from conceptnet_data import make_conceptnet_joint_dataloader
 import pretrain
+# import finetune_ignore
 # import finetune
 import joint_training
 from opt import OpenAIAdam
@@ -103,6 +104,11 @@ def main(args,pretrain_setting,finetune_setting):
     if args.do_finetune:
         if args.do_pretrain:
           model = make_model(args.load_model_pth)
+        if args.ignore:
+          import finetune as finetune
+        else:
+          import finetune_ignore as finetune
+
         # num_train_optimization_steps = len(finetune_dataset["train"]) * args.epoch_num // args.train_batch_size // args.num_accumulation
         num_train_optimization_steps = args.steps
         print_train_information(args, num_train_optimization_steps)
@@ -147,6 +153,7 @@ if __name__ == '__main__':
     parser.add_argument('--do_joint',action='store_true')
     parser.add_argument('--dataset_type',type=str,default='conceptnet')
     parser.add_argument('--pretrain_type',type=str,default='path')
+    parser.add_argument('--ignore',action='store_true')
     parser.add_argument('--pretrain_config_pth',type=str,default='pretrain_config.json')
     parser.add_argument('--finetune_config_pth',type=str,default='finetune_config.json')
     parser.add_argument('--train_batch_size',type=int, default= 8)
